@@ -104,7 +104,10 @@ The backend reads environment variables from `backend/.env`.
 
 ```env
 DEBUG=True
-SECRET_KEY=change-me
+SECRET_KEY=replace_with_a_long_random_django_secret
+ALLOWED_HOSTS=localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+LEADORBIT_TOKEN_ENCRYPTION_KEY=generate_a_fernet_key_and_keep_it_secret
 BACKEND_BASE_URL=http://127.0.0.1:8000
 FRONTEND_BASE_URL=http://127.0.0.1:8080
 
@@ -128,6 +131,10 @@ TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 ```
+
+Use `backend/.env.example` as the variable list. Generate a Django secret and a separate Fernet key; never reuse or commit either value. Keep `DEBUG=True` only for local development, and set `ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` to the deployed hostnames in production. Set `LEADORBIT_TOKEN_ENCRYPTION_KEY` before applying migrations: migration `0010` encrypts existing Gmail access and refresh tokens in the database. Back up this key securely; losing it makes stored OAuth tokens unreadable.
+
+Google account linking starts with an authenticated POST to the backend and then redirects the browser to Google's consent page. The app JWT is sent in the authorization header and is not included in the URL.
 
 ### 3. Run migrations
 
@@ -220,7 +227,7 @@ Run the backend test suite from `backend/`:
 python manage.py test
 ```
 
-Current repo state: `27` backend tests pass. The suite covers auth/profile updates, lead import, tenant isolation, campaign creation, campaign launch, non-email flow handling, conditional branching, connected-account ownership rules, reply polling, and AI fallback behavior.
+The test suite covers auth/profile updates, lead import, tenant isolation, campaign creation and launch, connected-account ownership, reply polling, and AI fallback behavior. Run it against the current checkout to confirm the current result.
 
 ## Current Caveats
 
@@ -330,7 +337,10 @@ The backend reads environment variables from `backend/.env`.
 
 ```env
 DEBUG=True
-SECRET_KEY=change-me
+SECRET_KEY=replace_with_a_long_random_django_secret
+ALLOWED_HOSTS=localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+LEADORBIT_TOKEN_ENCRYPTION_KEY=generate_a_fernet_key_and_keep_it_secret
 BACKEND_BASE_URL=http://127.0.0.1:8000
 FRONTEND_BASE_URL=http://127.0.0.1:8080
 
@@ -354,6 +364,8 @@ TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 ```
+
+Use `backend/.env.example` as the variable list. Generate a Django secret and a separate Fernet key; never reuse or commit either value. Keep `DEBUG=True` only for local development, and set `ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` to the deployed hostnames in production. Set `LEADORBIT_TOKEN_ENCRYPTION_KEY` before applying migrations: migration `0010` encrypts existing Gmail access and refresh tokens in the database. Back up this key securely; losing it makes stored OAuth tokens unreadable.
 
 ### 3. Run migrations
 
@@ -446,7 +458,7 @@ Run the backend test suite from `backend/`:
 python manage.py test
 ```
 
-Current repo state: `27` backend tests pass. The suite covers auth/profile updates, lead import, tenant isolation, campaign creation, campaign launch, non-email flow handling, conditional branching, connected-account ownership rules, reply polling, and AI fallback behavior.
+The test suite covers auth/profile updates, lead import, tenant isolation, campaign creation and launch, connected-account ownership, reply polling, and AI fallback behavior. Run it against the current checkout to confirm the current result.
 
 ## Current Caveats
 

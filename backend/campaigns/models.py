@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from tenants.models import TenantModel
 from leads.models import Lead
+from campaigns.fields import EncryptedTextField
 import uuid
 
 class ConnectedEmailAccount(TenantModel):
@@ -19,8 +20,8 @@ class ConnectedEmailAccount(TenantModel):
         blank=True,
         related_name='connected_email_accounts',
     )
-    access_token = models.TextField()
-    refresh_token = models.TextField(blank=True, null=True)
+    access_token = EncryptedTextField()
+    refresh_token = EncryptedTextField(blank=True, null=True)
     token_expiry = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):

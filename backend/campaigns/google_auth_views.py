@@ -70,42 +70,20 @@ def _frontend_settings_redirect(request, preferred_frontend_base: str = '', **pa
 
 class GoogleOAuthLoginView(APIView):
     """
-    GET /api/v1/auth/google/login?token=<jwt>
-    Redirects the user to Google's OAuth2 consent screen.
+    POST /api/v1/auth/google/login
+    Returns Google's consent URL to an authenticated frontend request.
 
-    The user's JWT is passed as a query parameter since this is a
-    browser navigation (not an XHR), so Authorization headers can't be sent.
-    The JWT is decoded to extract user/org identity for the state parameter.
+    The frontend then navigates to that URL. Authentication stays in the
+    Authorization header and is never copied into a browser URL.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        from users.models import User
-        from rest_framework_simplejwt.tokens import AccessToken
-
-        user = None
-
-        # Try authenticated user first (for API calls with Authorization header)
-        if request.user and request.user.is_authenticated:
-            user = request.user
-        else:
-            # Fall back to token in query param (browser navigation)
-            token_str = request.GET.get('token')
-            if token_str:
-                try:
-                    decoded = AccessToken(token_str)
-                    user_id = decoded.get('user_id')
-                    user = User.objects.all().get(id=user_id)
-                    logger.info(f"[OAuth Login] Resolved user {user.email} from query token")
-                except Exception as e:
-                    logger.error(f"[OAuth Login] Failed to decode token from query: {e}")
-
-        if not user:
-            logger.error("[OAuth Login] No valid user found — cannot initiate OAuth")
-            return _frontend_settings_redirect(request, google_auth='error', reason='not_logged_in')
-
+    def post(self, request):
+        user = request.user
         # Encode user identity in state so callback can link to correct user
-        frontend_origin = _sanitize_frontend_base(request, request.GET.get('frontend_origin', ''))
+        frontend_origin = _sanitize_frontend_base(
+            request, request.data.get('frontend_origin', request.headers.get('Origin', ''))
+        )
         state_data = signing.dumps({
             'user_id': str(user.id),
             'org_id': str(user.organization_id),
@@ -122,8 +100,10 @@ class GoogleOAuthLoginView(APIView):
             'state': state_data,
         }
         url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
-        logger.info(f"[OAuth Login] Redirecting user {user.email} to Google consent screen")
-        return redirect(url)
+        response = Response({'authorization_url': url}, status=status.HTTP_200_OK)
+        response['Cache-Control'] = 'no-store'
+        response['Referrer-Policy'] = 'no-referrer'
+        return response
 
 
 class GoogleOAuthCallbackView(APIView):
@@ -230,7 +210,7 @@ class GoogleOAuthCallbackView(APIView):
             )
 
         if token_response.status_code != 200:
-            logger.error(f"[OAuth Callback] Token exchange failed: {token_response.text}")
+            logger.error("[OAuth Callback] Token exchange failed with status %s", token_response.status_code)
             return _frontend_settings_redirect(
                 request,
                 preferred_frontend_base=frontend_origin,

@@ -3,6 +3,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.core import signing
+from django.db import connection
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
@@ -24,7 +25,10 @@ from tenants.models import Organization
 from users.models import User
 
 
-@override_settings(GEMINI_API_KEY='')
+@override_settings(
+    GEMINI_API_KEY='',
+    LEADORBIT_TOKEN_ENCRYPTION_KEY='MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=',
+)
 class CampaignWorkflowTests(APITestCase):
     def setUp(self):
         self.organization = Organization.objects.create(name='Acme')
@@ -35,6 +39,31 @@ class CampaignWorkflowTests(APITestCase):
             role='ADMIN',
         )
         self.client.force_authenticate(self.user)
+
+    def test_connected_email_tokens_are_encrypted_in_database(self):
+        account = ConnectedEmailAccount.objects.create(
+            organization=self.organization,
+            connected_by=self.user,
+            email_address='sender@acme.test',
+            provider='GOOGLE',
+            access_token='oauth-access-secret',
+            refresh_token='oauth-refresh-secret',
+        )
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT access_token, refresh_token FROM campaigns_connectedemailaccount WHERE email_address = %s',
+                [account.email_address],
+            )
+            stored_access, stored_refresh = cursor.fetchone()
+
+        account.refresh_from_db()
+        self.assertTrue(stored_access.startswith('enc:v1:'))
+        self.assertTrue(stored_refresh.startswith('enc:v1:'))
+        self.assertNotIn('oauth-access-secret', stored_access)
+        self.assertNotIn('oauth-refresh-secret', stored_refresh)
+        self.assertEqual(account.access_token, 'oauth-access-secret')
+        self.assertEqual(account.refresh_token, 'oauth-refresh-secret')
 
     def test_create_campaign_syncs_sequence_steps_from_builder_payload(self):
         account = ConnectedEmailAccount.objects.create(
@@ -1451,13 +1480,15 @@ class GoogleOAuthStateTests(APITestCase):
         self.client.force_authenticate(self.user)
 
     def test_login_view_signs_oauth_state(self):
-        response = self.client.get(
+        response = self.client.post(
             '/api/v1/auth/google/login',
             {'frontend_origin': 'https://app.example.test'},
+            format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
-        redirect_url = response['Location']
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Cache-Control'], 'no-store')
+        redirect_url = response.data['authorization_url']
         parsed = urlparse(redirect_url)
         params = parse_qs(parsed.query)
         state = params['state'][0]
@@ -1470,6 +1501,14 @@ class GoogleOAuthStateTests(APITestCase):
         self.assertEqual(state_data['user_id'], str(self.user.id))
         self.assertEqual(state_data['org_id'], str(self.organization.id))
         self.assertEqual(state_data['frontend_origin'], 'https://app.example.test')
+
+    def test_login_requires_authentication_and_does_not_accept_url_token(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get('/api/v1/auth/google/login', {'token': 'not-a-token'})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.client.post('/api/v1/auth/google/login', format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_callback_rejects_tampered_state_and_accepts_signed_state(self):
         with patch('campaigns.google_auth_views.requests.post') as mock_post, patch(
